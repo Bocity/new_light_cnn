@@ -64,20 +64,31 @@ def main():
     # create Light CNN for face recognition
     if args.model == 'LightCNN-9':
         model = LightCNN_9Layers(num_classes=args.num_classes)
+        model2 = LightCNN_9Layers(num_classes=args.num_classes)
+        model3 = LightCNN_9Layers(num_classes=args.num_classes)
     elif args.model == 'LightCNN-29':
         model = LightCNN_29Layers(num_classes=args.num_classes)
+        model2 = LightCNN_29Layers(num_classes=args.num_classes)
+        model3 = LightCNN_29Layers(num_classes=args.num_classes)
     elif args.model == 'LightCNN-29v2':
         model = LightCNN_29Layers_v2(num_classes=args.num_classes)
+        model2 = LightCNN_29Layers_v2(num_classes=args.num_classes)
+        model3 = LightCNN_29Layers_v2(num_classes=args.num_classes)
     else:
         print('Error model type\n')
 
     if args.cuda:
         model = torch.nn.DataParallel(model).cuda()
+        model2 = torch.nn.DataParallel(model2).cuda()
+        model3 = torch.nn.DataParallel(model3).cuda()
 
     print(model)
-
+    print(model2)
+    print(model3)
     # large lr for last fc parameters
     params = []
+    params2 = []
+    params3 = []
     for name, value in model.named_parameters():
         if 'bias' in name:
             if 'fc2' in name:
@@ -89,8 +100,36 @@ def main():
                 params += [{'params':value, 'lr': 10 * args.lr}]
             else:
                 params += [{'params':value, 'lr': 1 * args.lr}]
+    for name, value in model2.named_parameters():
+        if 'bias' in name:
+            if 'fc2' in name:
+                params2 += [{'params':value, 'lr': 20 * args.lr, 'weight_decay': 0}]
+            else:
+                params2 += [{'params':value, 'lr': 2 * args.lr, 'weight_decay': 0}]
+        else:
+            if 'fc2' in name:
+                params2 += [{'params':value, 'lr': 10 * args.lr}]
+            else:
+                params2 += [{'params':value, 'lr': 1 * args.lr}]
+    for name, value in model3.named_parameters():
+        if 'bias' in name:
+            if 'fc2' in name:
+                params3 += [{'params':value, 'lr': 20 * args.lr, 'weight_decay': 0}]
+            else:
+                params3 += [{'params':value, 'lr': 2 * args.lr, 'weight_decay': 0}]
+        else:
+            if 'fc2' in name:
+                params3 += [{'params':value, 'lr': 10 * args.lr}]
+            else:
+                params3 += [{'params':value, 'lr': 1 * args.lr}]
 
     optimizer = torch.optim.SGD(params, args.lr,
+                                momentum=args.momentum,
+                                weight_decay=args.weight_decay)
+    optimizer2 = torch.optim.SGD(params2, args.lr,
+                                momentum=args.momentum,
+                                weight_decay=args.weight_decay)
+    optimizer3 = torch.optim.SGD(params3, args.lr,
                                 momentum=args.momentum,
                                 weight_decay=args.weight_decay)
 
@@ -101,6 +140,8 @@ def main():
             checkpoint = torch.load(args.resume)
             args.start_epoch = checkpoint['epoch']
             model.load_state_dict(checkpoint['state_dict'])
+            model2.load_state_dict(checkpoint['state_dict2'])
+            model3.load_state_dict(checkpoint['state_dict3'])
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
         else:
@@ -134,65 +175,76 @@ def main():
     if args.cuda:
         criterion.cuda()
 
-    validate(val_loader, model, criterion)    
+    validate(val_loader, model, model2, model3, criterion)    
 
     for epoch in range(args.start_epoch, args.epochs):
 
         adjust_learning_rate(optimizer, epoch)
-
+        adjust_learning_rate(optimizer2, epoch)
+        adjust_learning_rate(optimizer3, epoch)
         # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch)
+        train(train_loader, model, model2, model3, criterion, optimizer, optimizer2, optimizer3, epoch)
 
         # evaluate on validation set
-        prec1 = validate(val_loader, model, criterion)
+        prec1 = validate(val_loader, model, model2, model3, criterion)
 
         save_name = args.save_path + 'lightCNN_' + str(epoch+1) + '_checkpoint.pth.tar'
         save_checkpoint({
             'epoch': epoch + 1,
             'arch': args.arch,
             'state_dict': model.state_dict(),
+            'state_dict2': model2.state_dict(),
+            'state_dict3': model3.state_dict(),
             'prec1': prec1,
         }, save_name)
 
 
-def train(train_loader, model, criterion, optimizer, epoch):
+def train(train_loader, model, model2, model3, criterion, optimizer, optimizer2, optimizer3, epoch):
     batch_time = AverageMeter()
     data_time  = AverageMeter()
     losses     = AverageMeter()
     top1       = AverageMeter()
     top5       = AverageMeter()
-
-    model.train()
-
     end = time.time()
-    for i, (input, target) in enumerate(train_loader):
+    for i, (input, target, facetype) in enumerate(train_loader):
+        model3.train()
         data_time.update(time.time() - end)
+        if (facetype == 1):
+            model.train()
+            input      = input.cuda()
+            target     = target.cuda()
+            input_var  = torch.autograd.Variable(input)
+            target_var = torch.autograd.Variable(target)
 
-        input      = input.cuda()
-        target     = target.cuda()
-        input_var  = torch.autograd.Variable(input)
-        target_var = torch.autograd.Variable(target)
+            # compute output
+            output, _ = model(input_var)
+            output, _2 = model3(_)
+            loss   = criterion(output, target_var)
+            loss2 = loss
+            # measure accuracy and record loss
+            prec1, prec5 = accuracy(output.data, target, topk=(1,5))
+            losses.update(loss.data[0], input.size(0))
+            top1.update(prec1[0], input.size(0))
+            top5.update(prec5[0], input.size(0))
 
-        # compute output
-        output, _ = model(input_var)
-        loss   = criterion(output, target_var)
 
-        # measure accuracy and record loss
-        prec1, prec5 = accuracy(output.data, target, topk=(1,5))
-        losses.update(loss.data[0], input.size(0))
-        top1.update(prec1[0], input.size(0))
-        top5.update(prec5[0], input.size(0))
+            # compute gradient and do SGD step
+            model.train(false)    #c
+            model2.train(false)     #z
+            optimizer3.zero_grad()
+            loss.backward()
+            optimizer3.step()
+            model.train(true)   #c   
+            model3.train(false) #a
+            optimizer.zero_grad()
+            loss2.backward()
+            optimizer.step()
 
-        # compute gradient and do SGD step
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
 
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
-
-        if i % args.print_freq == 0:
+            if i % args.print_freq == 0:
             print('Epoch: [{0}][{1}/{2}]\t'
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
@@ -202,31 +254,101 @@ def train(train_loader, model, criterion, optimizer, epoch):
                    epoch, i, len(train_loader), batch_time=batch_time,
                    data_time=data_time, loss=losses, top1=top1, top5=top5))
 
-def validate(val_loader, model, criterion):
+        elif:
+            model2.train()
+            input      = input.cuda()
+            target     = target.cuda()
+            input_var  = torch.autograd.Variable(input)
+            target_var = torch.autograd.Variable(target)
+
+            # compute output
+            output, _ = model2(input_var)
+            output, _2 = model3(_)
+            loss   = criterion(output, target_var)
+            loss2 = loss
+            # measure accuracy and record loss
+            prec1, prec5 = accuracy(output.data, target, topk=(1,5))
+            losses.update(loss.data[0], input.size(0))
+            top1.update(prec1[0], input.size(0))
+            top5.update(prec5[0], input.size(0))
+
+            # compute gradient and do SGD step
+            model.train(false)      #c
+            model2.train(false)     #z
+            optimizer3.zero_grad()
+            loss.backward()
+            optimizer3.step()
+            model2.train(true)  #z
+            model3.train(false) #a
+            optimizer2.zero_grad()
+            loss2.backward()
+            optimizer2.step()
+
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+            if i % args.print_freq == 0:
+                print('Epoch: [{0}][{1}/{2}]\t'
+                    'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                    'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                    'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+                    'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
+                    'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
+                    epoch, i, len(train_loader), batch_time=batch_time,
+                    data_time=data_time, loss=losses, top1=top1, top5=top5))
+
+
+
+def validate(val_loader, model, model2, model3, criterion):
     batch_time = AverageMeter()
     losses     = AverageMeter()
     top1       = AverageMeter()
     top5       = AverageMeter()
 
     # switch to evaluate mode
-    model.eval()
 
     end = time.time()
-    for i, (input, target) in enumerate(val_loader):
-        input      = input.cuda()
-        target     = target.cuda()
-        input_var  = torch.autograd.Variable(input, volatile=True)
-        target_var = torch.autograd.Variable(target, volatile=True)
+    for i, (input, target, facetype) in enumerate(val_loader):
+        model3.eval()
+        if (facetype == 1):
+            model.eval()
+            model2.eval(false)
+            input      = input.cuda()
+            target     = target.cuda()
+            input_var  = torch.autograd.Variable(input, volatile=True)
+            target_var = torch.autograd.Variable(target, volatile=True)
 
-        # compute output
-        output, _ = model(input_var)
-        loss   = criterion(output, target_var)
+            # compute output
+            output, _ = model(input_var)
+            output, _2 = model3(_)
+            loss   = criterion(output, target_var)
+            loss2  = loss
+            # measure accuracy and record loss
+            prec1, prec5 = accuracy(output.data, target, topk=(1,5))
+            losses.update(loss.data[0], input.size(0))
+            top1.update(prec1[0], input.size(0))
+            top5.update(prec5[0], input.size(0))
+        elif:
+            model.eval(false)
+            model2.eval()
+            input      = input.cuda()
+            target     = target.cuda()
+            input_var  = torch.autograd.Variable(input, volatile=True)
+            target_var = torch.autograd.Variable(target, volatile=True)
 
-        # measure accuracy and record loss
-        prec1, prec5 = accuracy(output.data, target, topk=(1,5))
-        losses.update(loss.data[0], input.size(0))
-        top1.update(prec1[0], input.size(0))
-        top5.update(prec5[0], input.size(0))
+            # compute output
+            output, _ = model2(input_var)
+            output, _2 = model3(_)
+            loss   = criterion(output, target_var)
+            loss2  = loss
+
+            # measure accuracy and record loss
+            prec1, prec5 = accuracy(output.data, target, topk=(1,5))
+            losses.update(loss.data[0], input.size(0))
+            top1.update(prec1[0], input.size(0))
+            top5.update(prec5[0], input.size(0))
+
 
 
     print('\nTest set: Average loss: {}, Accuracy: ({})\n'.format(losses.avg, top1.avg))
