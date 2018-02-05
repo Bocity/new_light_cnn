@@ -12,7 +12,7 @@ def default_list_reader(fileList):
     imgList = []
     with open(fileList, 'r') as file:
         for line in file.readlines():
-            imgPath, label = line.strip().split(' ')
+            imgPath, label, facetype = line.strip().split(' ')
             imgList.append((imgPath, int(label)))
     return imgList
 
