@@ -13,7 +13,7 @@ def default_list_reader(fileList):
     with open(fileList, 'r') as file:
         for line in file.readlines():
             imgPath, label, facetype = line.strip().split(' ')
-            imgList.append((imgPath, int(label)))
+            imgList.append((imgPath, int(label), int(facetype)))
     return imgList
 
 class ImageList(data.Dataset):
@@ -24,12 +24,12 @@ class ImageList(data.Dataset):
         self.loader    = loader
 
     def __getitem__(self, index):
-        imgPath, target = self.imgList[index]
+        imgPath, target, facetype = self.imgList[index]
         img = self.loader(os.path.join(self.root, imgPath))
 
         if self.transform is not None:
             img = self.transform(img)
-        return img, target
+        return img, target, facetype
 
     def __len__(self):
         return len(self.imgList)
