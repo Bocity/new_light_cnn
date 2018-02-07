@@ -170,7 +170,7 @@ def train(train_loader, model, criterion, optimizer, epoch):
 
         input      = input.cuda()
         target     = target.cuda()
-        if (facetype > 0).numpy():
+        if (facetype[i] > 0):
             input_var  = torch.autograd.Variable(input, requires_grad = True)
             input_var2  = torch.autograd.Variable(input, requires_grad = False)
         else:
