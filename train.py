@@ -220,12 +220,8 @@ def validate(val_loader, model, criterion):
     for i, (input, target, facetype) in enumerate(val_loader):
         input      = input.cuda()
         target     = target.cuda()
-        if (facetype > 0).numpy().any():
-            input_var  = torch.autograd.Variable(input, volatile=True,requires_grad = True)
-            input_var2  = torch.autograd.Variable(input, volatile=True,requires_grad = False)
-        else:
-            input_var  = torch.autograd.Variable(input, volatile=True,requires_grad = False)
-            input_var2  = torch.autograd.Variable(input, volatile=True,requires_grad = True)
+        input_var  = torch.autograd.Variable(input, volatile=True)
+        input_var2  = torch.autograd.Variable(input, volatile=True)
         target_var = torch.autograd.Variable(target, volatile=True)
 
         # compute output
