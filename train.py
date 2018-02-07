@@ -25,7 +25,7 @@ from load_imglist import ImageList
 
 parser = argparse.ArgumentParser(description='PyTorch Light CNN Training')
 parser.add_argument('--arch', '-a', metavar='ARCH', default='LightCNN')
-parser.add_argument('--cuda', '-c', default=True)
+parser.add_argument('--cuda', '-c', default=1)
 parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                     help='number of data loading workers (default: 16)')
 parser.add_argument('--epochs', default=80, type=int, metavar='N',
@@ -147,7 +147,7 @@ def main():
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
-    cudnn.benchmark = True
+    cudnn.benchmark = 1
 
     #load image
     train_loader = torch.utils.data.DataLoader(
@@ -157,8 +157,8 @@ def main():
                 transforms.RandomHorizontalFlip(), 
                 transforms.ToTensor(),
             ])),
-        batch_size=args.batch_size, shuffle=True,
-        num_workers=args.workers, pin_memory=True)
+        batch_size=args.batch_size, shuffle=1,
+        num_workers=args.workers, pin_memory=1)
 
     val_loader = torch.utils.data.DataLoader(
         ImageList(root=args.root_path, fileList=args.val_list, 
@@ -166,8 +166,8 @@ def main():
                 transforms.CenterCrop(128),
                 transforms.ToTensor(),
             ])),
-        batch_size=args.batch_size, shuffle=False,
-        num_workers=args.workers, pin_memory=True)   
+        batch_size=args.batch_size, shuffle=0,
+        num_workers=args.workers, pin_memory=1)   
 
     # define loss function and optimizer
     criterion = nn.CrossEntropyLoss()
@@ -209,7 +209,7 @@ def train(train_loader, model, model2, model3, criterion, optimizer, optimizer2,
     for i, (input, target, facetype) in enumerate(train_loader):
         model3.train()
         data_time.update(time.time() - end)
-        if (facetype == 1):
+        if (facetype > 0).numpy():
             model.train()
             input      = input.cuda()
             target     = target.cuda()
@@ -229,13 +229,13 @@ def train(train_loader, model, model2, model3, criterion, optimizer, optimizer2,
 
 
             # compute gradient and do SGD step
-            model.train(false)    #c
-            model2.train(false)     #z
+            model.train(0)    #c
+            model2.train(0)     #z
             optimizer3.zero_grad()
             loss.backward()
             optimizer3.step()
-            model.train(true)   #c   
-            model3.train(false) #a
+            model.train(1)   #c   
+            model3.train(0) #a
             optimizer.zero_grad()
             loss2.backward()
             optimizer.step()
@@ -273,13 +273,13 @@ def train(train_loader, model, model2, model3, criterion, optimizer, optimizer2,
             top5.update(prec5[0], input.size(0))
 
             # compute gradient and do SGD step
-            model.train(false)      #c
-            model2.train(false)     #z
+            model.train(0)      #c
+            model2.train(0)     #z
             optimizer3.zero_grad()
             loss.backward()
             optimizer3.step()
-            model2.train(true)  #z
-            model3.train(false) #a
+            model2.train(1)  #z
+            model3.train(0) #a
             optimizer2.zero_grad()
             loss2.backward()
             optimizer2.step()
@@ -311,13 +311,13 @@ def validate(val_loader, model, model2, model3, criterion):
     end = time.time()
     for i, (input, target, facetype) in enumerate(val_loader):
         model3.eval()
-        if (facetype == 1):
+        if (facetype > 0).numpy().any():
             model.eval()
-            model2.eval(false)
+            model2.eval(0)
             input      = input.cuda()
             target     = target.cuda()
-            input_var  = torch.autograd.Variable(input, volatile=True)
-            target_var = torch.autograd.Variable(target, volatile=True)
+            input_var  = torch.autograd.Variable(input, volatile=1)
+            target_var = torch.autograd.Variable(target, volatile=1)
 
             # compute output
             output, _ = model(input_var)
@@ -330,12 +330,12 @@ def validate(val_loader, model, model2, model3, criterion):
             top1.update(prec1[0], input.size(0))
             top5.update(prec5[0], input.size(0))
         else:
-            model.eval(false)
+            model.eval(0)
             model2.eval()
             input      = input.cuda()
             target     = target.cuda()
-            input_var  = torch.autograd.Variable(input, volatile=True)
-            target_var = torch.autograd.Variable(target, volatile=True)
+            input_var  = torch.autograd.Variable(input, volatile=1)
+            target_var = torch.autograd.Variable(target, volatile=1)
 
             # compute output
             output, _ = model2(input_var)
@@ -393,7 +393,7 @@ def accuracy(output, target, topk=(1,)):
     maxk = max(topk)
     batch_size = target.size(0)
 
-    _, pred = output.topk(maxk, 1, True, True)
+    _, pred = output.topk(maxk, 1, 1, 1)
     pred    = pred.t()
     correct = pred.eq(target.view(1, -1).expand_as(pred))
 
