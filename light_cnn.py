@@ -131,6 +131,14 @@ class network_29layers_v2(nn.Module):
         self.block2   = self._make_layer(block, layers[1], 96, 96)
         self.group2   = group(96, 192, 3, 1, 1)
         self.block3   = self._make_layer(block, layers[2], 192, 192)
+
+        self.conv1_2    = mfm(1, 48, 5, 1, 2)
+        self.block1_2    = self._make_layer(block, layers[0], 48, 48)
+        self.group1_2    = group(48, 96, 3, 1, 1)
+        self.block2_2    = self._make_layer(block, layers[1], 96, 96)
+        self.group2_2    = group(96, 192, 3, 1, 1)
+        self.block3_2   = self._make_layer(block, layers[2], 192, 192)
+
         self.group3   = group(192, 128, 3, 1, 1)
         self.block4   = self._make_layer(block, layers[3], 128, 128)
         self.group4   = group(128, 128, 3, 1, 1)
@@ -143,7 +151,7 @@ class network_29layers_v2(nn.Module):
             layers.append(block(in_channels, out_channels))
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, y):
         x = self.conv1(x)
         x = F.max_pool2d(x, 2) + F.avg_pool2d(x, 2)
 
@@ -155,16 +163,29 @@ class network_29layers_v2(nn.Module):
         x = self.group2(x)
         x = F.max_pool2d(x, 2) + F.avg_pool2d(x, 2)
 
-        x = self.block3(x)
-        x = self.group3(x)
-        x = self.block4(x)
-        x = self.group4(x)
-        x = F.max_pool2d(x, 2) + F.avg_pool2d(x, 2)
+        y = self.conv1_2(y)
+        y = F.max_pool2d(y, 2) + F.avg_pool2d(y, 2)
 
-        x = x.view(x.size(0), -1)
-        fc = self.fc(x)
-        x = F.dropout(fc, training=self.training)
-        out = self.fc2(x)
+        y = self.block1_2(y)
+        y = self.group1_2(y)
+        y = F.max_pool2d(y, 2) + F.avg_pool2d(y, 2)
+
+        y = self.block2_2(y)
+        y = self.group2_2(y)
+        y = F.max_pool2d(y, 2) + F.avg_pool2d(y, 2)
+
+
+        x = self.block3(x)
+        y = self.block3_2(y)
+        z = self.group3(x + y)
+        z = self.block4(z)
+        z = self.group4(z)
+        z = F.max_pool2d(z, 2) + F.avg_pool2d(z, 2)
+
+        z = z.view(z.size(0), -1)
+        fc = self.fc(z)
+        z = F.dropout(fc, training=self.training)
+        out = self.fc2(z)
         return out, fc
 
 def LightCNN_9Layers(**kwargs):
